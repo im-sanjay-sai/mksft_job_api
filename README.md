@@ -42,7 +42,7 @@ python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --all-jobs --once
 python3 microsoft_job_watcher.py --include-unknown-years
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
-python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --stop-after-seen-pages 3 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
+python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --stop-after-seen-pages 3 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -119,6 +119,9 @@ The watcher now supports a native OpenClaw webhook mode. Point it at
 `/hooks/agent`, pass your hook token in an `Authorization` header, and tell it
 where to deliver alerts.
 
+Detailed integration and runtime notes live in
+[`docs/openclaw-integration.md`](docs/openclaw-integration.md).
+
 Example:
 
 ```bash
@@ -132,7 +135,7 @@ python3 microsoft_job_watcher.py \
   --webhook-mode openclaw-agent \
   --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN \
   --openclaw-channel telegram \
-  --openclaw-to 7941109155 \
+  --openclaw-to YOUR_TELEGRAM_USER_ID \
   --no-print-matches
 ```
 

@@ -129,7 +129,7 @@ class WebhookTest(unittest.TestCase):
                 openclaw_wake_mode="now",
                 openclaw_timeout_seconds=120,
                 openclaw_channel="telegram",
-                openclaw_to="7941109155",
+                openclaw_to="1234567890",
             ),
         )
 
@@ -138,7 +138,7 @@ class WebhookTest(unittest.TestCase):
         self.assertTrue(payload["deliver"])
         self.assertEqual(payload["timeoutSeconds"], 120)
         self.assertEqual(payload["channel"], "telegram")
-        self.assertEqual(payload["to"], "7941109155")
+        self.assertEqual(payload["to"], "1234567890")
         self.assertIn("Software Engineer II", payload["message"])
         self.assertIn("Why it matched", payload["message"])
 
@@ -152,7 +152,7 @@ class WebhookTest(unittest.TestCase):
                 openclaw_wake_mode="now",
                 openclaw_timeout_seconds=120,
                 openclaw_channel="telegram",
-                openclaw_to="7941109155",
+                openclaw_to="1234567890",
             ),
         )
 
