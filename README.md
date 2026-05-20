@@ -39,8 +39,10 @@ By default it polls every 15 minutes.
 ```bash
 python3 microsoft_job_watcher.py --once --max-pages 20
 python3 microsoft_job_watcher.py --interval-minutes 5
+python3 microsoft_job_watcher.py --all-jobs --once
 python3 microsoft_job_watcher.py --include-unknown-years
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
+python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -52,10 +54,25 @@ Options:
 - `--max-years`: max acceptable years of experience. Default: `4`.
 - `--keyword`: keyword or phrase to match in title/description. Default:
   `software engineer`.
+- `--all-jobs`: match all United States jobs returned by Microsoft Careers.
+  This disables keyword and years filtering.
 - `--webhook-url`: POST each new match to this HTTP(S) endpoint as JSON.
+- `--webhook-mode`: `generic` or `openclaw-agent`. Default: `generic`.
 - `--webhook-timeout`: webhook timeout in seconds. Default: `15`.
 - `--webhook-header`: extra webhook HTTP header in `Header-Name: value`
   format. Repeat this option for multiple headers.
+- `--webhook-bearer-token-env`: environment variable name containing a bearer
+  token to inject as the `Authorization` header at runtime.
+- `--openclaw-name`: name shown in OpenClaw `/hooks/agent` runs. Default:
+  `Microsoft Jobs`.
+- `--openclaw-channel`: delivery channel for `openclaw-agent` mode, for example
+  `telegram`.
+- `--openclaw-to`: delivery recipient for `openclaw-agent` mode, for example a
+  Telegram user ID.
+- `--openclaw-wake-mode`: OpenClaw wake mode for `openclaw-agent` mode.
+  Default: `now`.
+- `--openclaw-timeout-seconds`: `timeoutSeconds` passed to OpenClaw
+  `/hooks/agent`. Default: `120`.
 - `--no-print-matches`: suppress full match details on stdout. Useful when a
   webhook handles alerts.
 - `--include-unknown-years`: report jobs even when the script cannot find an
@@ -92,6 +109,32 @@ When `--webhook-url` is set, each new match is POSTed as JSON:
 
 If webhook delivery fails, the match is not marked as seen. The next polling
 cycle will retry it.
+
+## OpenClaw + Telegram
+
+The watcher now supports a native OpenClaw webhook mode. Point it at
+`/hooks/agent`, pass your hook token in an `Authorization` header, and tell it
+where to deliver alerts.
+
+Example:
+
+```bash
+python3 microsoft_job_watcher.py \
+  --interval-minutes 15 \
+  --all-jobs \
+  --include-unknown-years \
+  --webhook-url http://127.0.0.1:18789/hooks/agent \
+  --webhook-mode openclaw-agent \
+  --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN \
+  --openclaw-channel telegram \
+  --openclaw-to 7941109155 \
+  --no-print-matches
+```
+
+In `openclaw-agent` mode, the watcher sends an OpenClaw-compatible payload that
+asks the agent to deliver a concise job alert into the configured chat channel.
+This is the safer option for services because the hook token stays in the
+environment instead of showing up in process arguments.
 
 ## Run with systemd
 

@@ -8,7 +8,8 @@ Type=simple
 User=YOUR_LINUX_USER
 Group=YOUR_LINUX_USER
 WorkingDirectory=/opt/microsoft-job-watcher
-ExecStart=/usr/bin/python3 /opt/microsoft-job-watcher/microsoft_job_watcher.py
+EnvironmentFile=/opt/microsoft-job-watcher/microsoft-job-watcher.env
+ExecStart=/usr/bin/python3 /opt/microsoft-job-watcher/microsoft_job_watcher.py --interval-minutes 15 --all-jobs --include-unknown-years --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
 Restart=always
 RestartSec=30
 

@@ -1,5 +1,6 @@
 import json
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from microsoft_job_watcher import (
@@ -7,7 +8,9 @@ from microsoft_job_watcher import (
     JobSummary,
     MatchResult,
     http_post_json,
+    openclaw_agent_payload,
     parse_webhook_headers,
+    resolve_webhook_headers,
     webhook_payload,
 )
 
@@ -57,8 +60,15 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(payload["source"], "microsoft-job-watcher")
         self.assertEqual(payload["job"]["id"], "abc123")
         self.assertEqual(payload["job"]["title"], "Software Engineer II")
+        self.assertEqual(payload["match"]["matching_mode"], "keyword+years")
         self.assertEqual(payload["match"]["years"], [2])
         self.assertEqual(payload["match"]["accepted_max_years"], 4)
+
+    def test_builds_all_jobs_payload(self) -> None:
+        payload = webhook_payload(sample_match(), max_years=4, all_jobs=True)
+
+        self.assertEqual(payload["match"]["matching_mode"], "all-jobs")
+        self.assertIsNone(payload["match"]["accepted_max_years"])
 
     def test_parses_repeatable_headers(self) -> None:
         headers = parse_webhook_headers(
@@ -71,6 +81,17 @@ class WebhookTest(unittest.TestCase):
     def test_rejects_bad_header_format(self) -> None:
         with self.assertRaises(ValueError):
             parse_webhook_headers(("Authorization Bearer token",))
+
+    def test_resolves_bearer_token_from_env(self) -> None:
+        args = SimpleNamespace(
+            webhook_header=None,
+            webhook_bearer_token_env="OPENCLAW_HOOKS_TOKEN",
+        )
+
+        with mock.patch.dict("os.environ", {"OPENCLAW_HOOKS_TOKEN": "secret-token"}):
+            headers = resolve_webhook_headers(args)
+
+        self.assertEqual(headers["Authorization"], "Bearer secret-token")
 
     def test_posts_json_payload(self) -> None:
         captured = {}
@@ -96,6 +117,45 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(json.loads(request.data.decode("utf-8")), payload)
         self.assertEqual(request.headers["Content-type"], "application/json")
         self.assertEqual(request.headers["X-test"], "yes")
+
+    def test_builds_openclaw_agent_payload(self) -> None:
+        payload = openclaw_agent_payload(
+            sample_match(),
+            max_years=4,
+            args=SimpleNamespace(
+                all_jobs=False,
+                openclaw_name="Microsoft Jobs",
+                openclaw_wake_mode="now",
+                openclaw_timeout_seconds=120,
+                openclaw_channel="telegram",
+                openclaw_to="7941109155",
+            ),
+        )
+
+        self.assertEqual(payload["name"], "Microsoft Jobs")
+        self.assertEqual(payload["wakeMode"], "now")
+        self.assertTrue(payload["deliver"])
+        self.assertEqual(payload["timeoutSeconds"], 120)
+        self.assertEqual(payload["channel"], "telegram")
+        self.assertEqual(payload["to"], "7941109155")
+        self.assertIn("Software Engineer II", payload["message"])
+        self.assertIn("Why it matched", payload["message"])
+
+    def test_builds_openclaw_agent_payload_for_all_jobs(self) -> None:
+        payload = openclaw_agent_payload(
+            sample_match(),
+            max_years=4,
+            args=SimpleNamespace(
+                all_jobs=True,
+                openclaw_name="Microsoft Jobs",
+                openclaw_wake_mode="now",
+                openclaw_timeout_seconds=120,
+                openclaw_channel="telegram",
+                openclaw_to="7941109155",
+            ),
+        )
+
+        self.assertIn("all-jobs mode", payload["message"])
 
 
 if __name__ == "__main__":
