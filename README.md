@@ -1,13 +1,13 @@
 # Microsoft Job Watcher
 
 Small Python watcher for Microsoft Careers. It polls every 15 minutes by
-default, looks only at United States postings, and prints new jobs where:
+default, looks only at United States postings, and reports new jobs where:
 
 - `software engineer` appears in the title or job description
 - the parsed experience requirement has a minimum value less than or equal to 4 years
 
 The script uses the public Microsoft Careers search endpoint and each job's
-public detail page. It stores seen job IDs in SQLite so repeat runs do not print
+public detail page. It stores seen job IDs in SQLite so repeat runs do not report
 the same job again.
 
 ## Requirements
@@ -40,6 +40,7 @@ By default it polls every 15 minutes.
 python3 microsoft_job_watcher.py --once --max-pages 20
 python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --include-unknown-years
+python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -51,9 +52,46 @@ Options:
 - `--max-years`: max acceptable years of experience. Default: `4`.
 - `--keyword`: keyword or phrase to match in title/description. Default:
   `software engineer`.
-- `--include-unknown-years`: print jobs even when the script cannot find an
+- `--webhook-url`: POST each new match to this HTTP(S) endpoint as JSON.
+- `--webhook-timeout`: webhook timeout in seconds. Default: `15`.
+- `--webhook-header`: extra webhook HTTP header in `Header-Name: value`
+  format. Repeat this option for multiple headers.
+- `--no-print-matches`: suppress full match details on stdout. Useful when a
+  webhook handles alerts.
+- `--include-unknown-years`: report jobs even when the script cannot find an
   experience requirement. Default is conservative and excludes unknown years.
 - `--reset-cache`: delete the seen-job cache before running.
+
+## Webhook payload
+
+When `--webhook-url` is set, each new match is POSTed as JSON:
+
+```json
+{
+  "event": "microsoft_job_match",
+  "sent_at_utc": "2026-05-20T18:00:00+00:00",
+  "source": "microsoft-job-watcher",
+  "job": {
+    "id": "abc123",
+    "display_id": "1720000",
+    "title": "Software Engineer II",
+    "department": "Engineering",
+    "locations": ["United States"],
+    "standardized_locations": ["Redmond, WA, US"],
+    "posted_utc": "2026-05-20T17:00:00+00:00",
+    "url": "https://apply.careers.microsoft.com/us/en/job/abc123/software-engineer"
+  },
+  "match": {
+    "keyword_found_in": "title+description",
+    "years": [2],
+    "year_snippets": ["2+ years software engineering experience."],
+    "accepted_max_years": 4
+  }
+}
+```
+
+If webhook delivery fails, the match is not marked as seen. The next polling
+cycle will retry it.
 
 ## Run with systemd
 

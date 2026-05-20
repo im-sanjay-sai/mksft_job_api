@@ -63,6 +63,10 @@ class MatchResult:
     keyword_found_in: str
 
 
+class WebhookDeliveryError(RuntimeError):
+    """Raised when a webhook endpoint does not accept a match payload."""
+
+
 def utc_now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -84,6 +88,44 @@ def http_get_json(url: str, params: dict[str, Any], timeout: int = 30) -> dict[s
     query = urllib.parse.urlencode(params)
     text = http_get_text(f"{url}?{query}", timeout=timeout)
     return json.loads(text)
+
+
+def http_post_json(
+    url: str,
+    payload: dict[str, Any],
+    timeout: int,
+    headers: dict[str, str] | None = None,
+) -> None:
+    body = json.dumps(payload, sort_keys=True).encode("utf-8")
+    request_headers = {
+        "Accept": "application/json, text/plain;q=0.9, */*;q=0.8",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+    }
+    if headers:
+        request_headers.update(headers)
+
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers=request_headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response.read()
+            if response.status >= 300:
+                raise WebhookDeliveryError(
+                    f"webhook POST returned HTTP {response.status}"
+                )
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", errors="replace").strip()
+        suffix = f": {detail}" if detail else ""
+        raise WebhookDeliveryError(
+            f"webhook POST returned HTTP {exc.code}{suffix}"
+        ) from exc
+    except (TimeoutError, urllib.error.URLError) as exc:
+        raise WebhookDeliveryError(f"webhook POST failed: {exc}") from exc
 
 
 def init_db(path: Path) -> sqlite3.Connection:
@@ -305,6 +347,46 @@ def posted_time(job: JobSummary) -> str:
     )
 
 
+def webhook_payload(result: MatchResult, max_years: int) -> dict[str, Any]:
+    job = result.job
+    detail = result.detail
+    return {
+        "event": "microsoft_job_match",
+        "sent_at_utc": utc_now(),
+        "source": "microsoft-job-watcher",
+        "job": {
+            "id": job.job_id,
+            "display_id": job.display_job_id,
+            "title": detail.title or job.title,
+            "department": job.department,
+            "locations": list(job.locations),
+            "standardized_locations": list(job.standardized_locations),
+            "posted_utc": posted_time(job),
+            "url": detail.url or job.url,
+        },
+        "match": {
+            "keyword_found_in": result.keyword_found_in,
+            "years": list(result.years),
+            "year_snippets": list(result.year_snippets),
+            "accepted_max_years": max_years,
+        },
+    }
+
+
+def parse_webhook_headers(values: Iterable[str]) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for value in values:
+        name, separator, header_value = value.partition(":")
+        name = name.strip()
+        header_value = header_value.strip()
+        if not separator or not name or not header_value:
+            raise ValueError(
+                "--webhook-header must use the format 'Header-Name: value'"
+            )
+        headers[name] = header_value
+    return headers
+
+
 def evaluate_job(
     job: JobSummary,
     keyword: str,
@@ -378,14 +460,32 @@ def run_cycle(args: argparse.Namespace, connection: sqlite3.Connection) -> int:
             print(f"  detail fetch failed for {job.job_id} {job.title}: {exc}", flush=True)
             continue
 
-        mark_seen(connection, job, matched=result is not None)
         if args.detail_delay_seconds > 0:
             time.sleep(args.detail_delay_seconds)
         if not result:
+            mark_seen(connection, job, matched=False)
             continue
 
+        if args.webhook_url:
+            try:
+                http_post_json(
+                    args.webhook_url,
+                    webhook_payload(result, max_years=args.max_years),
+                    timeout=args.webhook_timeout,
+                    headers=args.webhook_headers,
+                )
+            except WebhookDeliveryError as exc:
+                print(
+                    f"  webhook delivery failed for {job.job_id} {job.title}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
+
+        mark_seen(connection, job, matched=True)
         match_count += 1
-        print_match(result, max_years=args.max_years)
+        if not args.no_print_matches:
+            print_match(result, max_years=args.max_years)
 
     print(
         f"[{utc_now()}] Done. Candidates={len(candidates)} new_checked={new_count} matches={match_count}",
@@ -432,6 +532,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--detail-delay-seconds", type=float, default=0.25)
     parser.add_argument(
+        "--webhook-url",
+        default="",
+        help="POST each new match to this HTTP(S) webhook URL as JSON.",
+    )
+    parser.add_argument(
+        "--webhook-timeout",
+        type=int,
+        default=15,
+        help="Webhook POST timeout in seconds. Default: 15.",
+    )
+    parser.add_argument(
+        "--webhook-header",
+        action="append",
+        default=None,
+        help="Extra webhook HTTP header, formatted as 'Header-Name: value'. Repeatable.",
+    )
+    parser.add_argument(
+        "--no-print-matches",
+        action="store_true",
+        help="Do not print full match details; useful when a webhook handles alerts.",
+    )
+    parser.add_argument(
         "--db",
         type=Path,
         default=Path(__file__).with_name("seen_jobs.sqlite3"),
@@ -465,6 +587,13 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--max-years cannot be negative")
     if not args.keyword.strip():
         raise ValueError("--keyword cannot be empty")
+    if args.webhook_timeout <= 0:
+        raise ValueError("--webhook-timeout must be greater than 0")
+    if args.webhook_url:
+        parsed = urllib.parse.urlparse(args.webhook_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("--webhook-url must be an http or https URL")
+    parse_webhook_headers(args.webhook_header or ())
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -474,6 +603,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         validate_args(args)
     except ValueError as exc:
         parser.error(str(exc))
+    args.webhook_headers = parse_webhook_headers(args.webhook_header or ())
 
     if args.reset_cache:
         reset_cache(args.db)
