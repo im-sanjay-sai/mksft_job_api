@@ -42,7 +42,7 @@ python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --all-jobs --once
 python3 microsoft_job_watcher.py --include-unknown-years
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
-python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
+python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -123,6 +123,7 @@ python3 microsoft_job_watcher.py \
   --interval-minutes 15 \
   --all-jobs \
   --include-unknown-years \
+  --max-pages 200 \
   --webhook-url http://127.0.0.1:18789/hooks/agent \
   --webhook-mode openclaw-agent \
   --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN \
