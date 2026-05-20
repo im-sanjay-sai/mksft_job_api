@@ -1,0 +1,16 @@
+[Unit]
+Description=Microsoft Careers software engineer watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_LINUX_USER
+Group=YOUR_LINUX_USER
+WorkingDirectory=/opt/microsoft-job-watcher
+ExecStart=/usr/bin/python3 /opt/microsoft-job-watcher/microsoft_job_watcher.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
