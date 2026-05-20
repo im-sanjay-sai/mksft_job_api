@@ -7,6 +7,7 @@ from microsoft_job_watcher import (
     JobDetail,
     JobSummary,
     MatchResult,
+    fetch_candidates,
     http_post_json,
     openclaw_agent_payload,
     parse_webhook_headers,
@@ -156,6 +157,51 @@ class WebhookTest(unittest.TestCase):
         )
 
         self.assertIn("all-jobs mode", payload["message"])
+
+    def test_fetch_candidates_stops_after_seen_pages_in_all_jobs_mode(self) -> None:
+        pages = {
+            0: [
+                JobSummary(
+                    job_id="seen-1",
+                    display_job_id="1",
+                    title="Seen Job",
+                    locations=("United States",),
+                    standardized_locations=("Redmond, WA, US",),
+                    department="Engineering",
+                    posted_ts=1,
+                    position_path="/job/1",
+                )
+            ],
+            10: [
+                JobSummary(
+                    job_id="unseen-2",
+                    display_job_id="2",
+                    title="Unseen Job",
+                    locations=("United States",),
+                    standardized_locations=("Redmond, WA, US",),
+                    department="Engineering",
+                    posted_ts=2,
+                    position_path="/job/2",
+                )
+            ],
+        }
+
+        with mock.patch("microsoft_job_watcher.fetch_search_page", side_effect=lambda start, keyword, location, timeout: pages.get(start, [])), mock.patch(
+            "microsoft_job_watcher.has_seen",
+            side_effect=lambda connection, job_id: job_id.startswith("seen-"),
+        ):
+            candidates = fetch_candidates(
+                keyword="",
+                location="United States",
+                max_pages=5,
+                timeout=30,
+                connection=object(),
+                all_jobs=True,
+                no_cache=False,
+                stop_after_seen_pages=1,
+            )
+
+        self.assertEqual([job.job_id for job in candidates], ["seen-1"])
 
 
 if __name__ == "__main__":

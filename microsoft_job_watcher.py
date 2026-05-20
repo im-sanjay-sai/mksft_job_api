@@ -27,6 +27,7 @@ DEFAULT_KEYWORD = "software engineer"
 DEFAULT_LOCATION = "United States"
 DEFAULT_INTERVAL_MINUTES = 15
 DEFAULT_MAX_PAGES = 10
+DEFAULT_STOP_AFTER_SEEN_PAGES = 3
 DEFAULT_WEBHOOK_MODE = "generic"
 DEFAULT_OPENCLAW_HOOK_NAME = "Microsoft Jobs"
 DEFAULT_OPENCLAW_WAKE_MODE = "now"
@@ -499,14 +500,27 @@ def evaluate_job(
     )
 
 
-def fetch_candidates(keyword: str, location: str, max_pages: int, timeout: int) -> list[JobSummary]:
+def fetch_candidates(
+    keyword: str,
+    location: str,
+    max_pages: int,
+    timeout: int,
+    *,
+    connection: sqlite3.Connection | None = None,
+    all_jobs: bool = False,
+    no_cache: bool = False,
+    stop_after_seen_pages: int = 0,
+) -> list[JobSummary]:
     candidates: list[JobSummary] = []
     seen_ids: set[str] = set()
+    seen_page_streak = 0
     for page_number in range(max_pages):
         start = page_number * PAGE_SIZE
         jobs = fetch_search_page(start, keyword=keyword, location=location, timeout=timeout)
         if not jobs:
             break
+        page_has_unseen = False
+        page_candidates = 0
         for job in jobs:
             if not is_us_job(job):
                 continue
@@ -514,6 +528,30 @@ def fetch_candidates(keyword: str, location: str, max_pages: int, timeout: int) 
                 continue
             seen_ids.add(job.job_id)
             candidates.append(job)
+            page_candidates += 1
+            if (
+                connection is not None
+                and all_jobs
+                and not no_cache
+                and stop_after_seen_pages > 0
+                and not has_seen(connection, job.job_id)
+            ):
+                page_has_unseen = True
+
+        if (
+            connection is not None
+            and all_jobs
+            and not no_cache
+            and stop_after_seen_pages > 0
+        ):
+            if page_candidates == 0:
+                break
+            if page_has_unseen:
+                seen_page_streak = 0
+            else:
+                seen_page_streak += 1
+                if seen_page_streak >= stop_after_seen_pages:
+                    break
     return candidates
 
 
@@ -525,6 +563,10 @@ def run_cycle(args: argparse.Namespace, connection: sqlite3.Connection) -> int:
         location=args.location,
         max_pages=args.max_pages,
         timeout=args.timeout,
+        connection=connection,
+        all_jobs=args.all_jobs,
+        no_cache=args.no_cache,
+        stop_after_seen_pages=args.stop_after_seen_pages,
     )
 
     new_count = 0
@@ -635,6 +677,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-years", type=int, default=4)
     parser.add_argument("--interval-minutes", type=float, default=DEFAULT_INTERVAL_MINUTES)
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
+    parser.add_argument(
+        "--stop-after-seen-pages",
+        type=int,
+        default=DEFAULT_STOP_AFTER_SEEN_PAGES,
+        help=(
+            "In all-jobs mode, stop scanning after this many consecutive pages "
+            "contain only already-seen jobs. Use 0 to disable this optimization."
+        ),
+    )
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--detail-delay-seconds", type=float, default=0.25)
     parser.add_argument(
@@ -741,6 +792,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--interval-minutes must be greater than 0")
     if args.max_pages <= 0:
         raise ValueError("--max-pages must be greater than 0")
+    if args.stop_after_seen_pages < 0:
+        raise ValueError("--stop-after-seen-pages cannot be negative")
     if args.max_years < 0:
         raise ValueError("--max-years cannot be negative")
     if not args.all_jobs and not args.keyword.strip():

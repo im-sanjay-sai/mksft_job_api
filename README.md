@@ -42,7 +42,7 @@ python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --all-jobs --once
 python3 microsoft_job_watcher.py --include-unknown-years
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
-python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
+python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --stop-after-seen-pages 3 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to 7941109155 --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -51,6 +51,9 @@ Options:
 - `--interval-minutes`: poll interval. Default: `15`.
 - `--max-pages`: number of Microsoft search pages to read. Microsoft returns
   10 jobs per page. Default: `10`.
+- `--stop-after-seen-pages`: in `--all-jobs` mode, stop after this many
+  consecutive pages contain only already-seen jobs. Default: `3`. Use `0` to
+  disable this optimization.
 - `--max-years`: max acceptable years of experience. Default: `4`.
 - `--keyword`: keyword or phrase to match in title/description. Default:
   `software engineer`.
@@ -124,6 +127,7 @@ python3 microsoft_job_watcher.py \
   --all-jobs \
   --include-unknown-years \
   --max-pages 200 \
+  --stop-after-seen-pages 3 \
   --webhook-url http://127.0.0.1:18789/hooks/agent \
   --webhook-mode openclaw-agent \
   --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN \
@@ -136,6 +140,10 @@ In `openclaw-agent` mode, the watcher sends an OpenClaw-compatible payload that
 asks the agent to deliver a concise job alert into the configured chat channel.
 This is the safer option for services because the hook token stays in the
 environment instead of showing up in process arguments.
+
+For a fresh baseline, you can save the current jobs locally (for example
+`data/baseline_us_jobs_current.json`) and mark them as seen so only new jobs
+listed after that point alert you.
 
 ## Run with systemd
 
