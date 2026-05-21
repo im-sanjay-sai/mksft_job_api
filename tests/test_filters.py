@@ -8,6 +8,7 @@ from microsoft_job_watcher import (
     JobSummary,
     full_scan_due,
     init_db,
+    job_posted_within_age,
     keyword_match,
     mark_seen,
     parse_keywords,
@@ -60,6 +61,44 @@ class FilterTest(unittest.TestCase):
                 (now - dt.timedelta(hours=25)).isoformat(),
             )
             self.assertTrue(full_scan_due(connection, 24, now=now))
+
+    def test_filters_jobs_older_than_max_posted_age(self) -> None:
+        now = dt.datetime(2026, 5, 20, 12, 0, tzinfo=dt.timezone.utc)
+        recent = JobSummary(
+            job_id="recent",
+            display_job_id="1",
+            title="Software Engineer",
+            locations=("United States",),
+            standardized_locations=("Redmond, WA, US",),
+            department="Engineering",
+            posted_ts=int((now - dt.timedelta(hours=1, minutes=59)).timestamp()),
+            position_path="/job/recent",
+        )
+        old = JobSummary(
+            job_id="old",
+            display_job_id="2",
+            title="Software Engineer",
+            locations=("United States",),
+            standardized_locations=("Redmond, WA, US",),
+            department="Engineering",
+            posted_ts=int((now - dt.timedelta(hours=2, minutes=1)).timestamp()),
+            position_path="/job/old",
+        )
+        missing = JobSummary(
+            job_id="missing",
+            display_job_id="3",
+            title="Software Engineer",
+            locations=("United States",),
+            standardized_locations=("Redmond, WA, US",),
+            department="Engineering",
+            posted_ts=None,
+            position_path="/job/missing",
+        )
+
+        self.assertTrue(job_posted_within_age(recent, 2, now=now))
+        self.assertFalse(job_posted_within_age(old, 2, now=now))
+        self.assertFalse(job_posted_within_age(missing, 2, now=now))
+        self.assertTrue(job_posted_within_age(old, 0, now=now))
 
     def test_seen_cache_can_upgrade_rejected_job_to_matched(self) -> None:
         job = JobSummary(

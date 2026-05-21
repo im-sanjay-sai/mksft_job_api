@@ -159,6 +159,11 @@ class WebhookTest(unittest.TestCase):
         self.assertIn("Posted America/Los_Angeles", payload["message"])
         self.assertNotIn("Posted UTC", payload["message"])
         self.assertIn("independent Microsoft jobs alert agent", payload["message"])
+        self.assertIn("Software Engineer", payload["message"])
+        self.assertIn("SDE", payload["message"])
+        self.assertIn("applied engineer", payload["message"])
+        self.assertIn("product manager", payload["message"])
+        self.assertIn("HEARTBEAT_OK", payload["message"])
 
     def test_builds_openclaw_agent_payload_for_all_jobs(self) -> None:
         payload = openclaw_agent_payload(

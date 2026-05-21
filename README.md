@@ -3,7 +3,8 @@
 Small Python watcher for Microsoft Careers. It polls every 15 minutes by
 default, fetches broad United States postings, and reports new jobs where one
 of the configured software/AI role keywords appears in the title or job
-description.
+description. By default, alerts are limited to jobs Microsoft says were posted
+within the last 2 hours.
 
 Default role keywords:
 
@@ -56,8 +57,9 @@ python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --all-jobs --once
 python3 microsoft_job_watcher.py --keyword "software engineer" --keyword "ai engineer"
 python3 microsoft_job_watcher.py --full-scan-interval-hours 12
+python3 microsoft_job_watcher.py --max-posted-age-hours 2
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
-python3 microsoft_job_watcher.py --max-pages 200 --stop-after-seen-pages 3 --full-scan-interval-hours 24 --display-timezone America/Los_Angeles --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-agent-id microsoft-jobs --openclaw-session-key hook:microsoft-jobs --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
+python3 microsoft_job_watcher.py --max-pages 200 --stop-after-seen-pages 3 --full-scan-interval-hours 24 --max-posted-age-hours 2 --display-timezone America/Los_Angeles --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-agent-id microsoft-jobs --openclaw-session-key hook:microsoft-jobs --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -70,6 +72,9 @@ Options:
   only already-seen jobs. Default: `3`. Use `0` to disable this optimization.
 - `--full-scan-interval-hours`: periodically run a full scan by disabling
   `--stop-after-seen-pages`. Default: `24`. Use `0` to disable full scans.
+- `--max-posted-age-hours`: only alert on jobs posted within this many hours.
+  Default: `2`. Use `0` to disable the age filter. Jobs without a Microsoft
+  posted timestamp are skipped while this filter is enabled.
 - `--search-query`: optional Microsoft Careers API query. Default is empty,
   so the watcher fetches broad US results and filters locally.
 - `--keyword`: role keyword or phrase to match in title/description. Repeatable
@@ -157,6 +162,7 @@ python3 microsoft_job_watcher.py \
   --max-pages 200 \
   --stop-after-seen-pages 3 \
   --full-scan-interval-hours 24 \
+  --max-posted-age-hours 2 \
   --display-timezone America/Los_Angeles \
   --webhook-url http://127.0.0.1:18789/hooks/agent \
   --webhook-mode openclaw-agent \
@@ -171,10 +177,33 @@ python3 microsoft_job_watcher.py \
 In `openclaw-agent` mode, the watcher sends an OpenClaw-compatible payload that
 asks the agent to deliver a concise job alert into the configured chat channel.
 The hook message tells the independent OpenClaw agent to use only the provided
-job details, produce one Telegram-ready plain-text alert, use the local posted
-time, and omit UTC time.
+job details, alert only on clearly technical engineering/developer roles, skip
+product/program/project manager and other non-engineering roles with
+`HEARTBEAT_OK`, use the local posted time, and omit UTC time.
 This is the safer option for services because the hook token stays in the
 environment instead of showing up in process arguments.
+
+## Integration learning
+
+The clean split is:
+
+- This repo is the watcher and outbound webhook sender. It polls Microsoft,
+  deduplicates jobs, applies deterministic filters like United States location,
+  posted age, and role keywords, then POSTs to OpenClaw.
+- OpenClaw is the webhook receiver, agent-turn runner, and delivery layer. The
+  `/hooks/agent` endpoint receives the watcher payload, runs an agent turn, and
+  can deliver the resulting alert to Telegram.
+- Long-term preferences belong on the OpenClaw side when a dedicated agent is
+  configured. Examples: which job families to prioritize, how to summarize, and
+  when to skip a marginal match.
+- Mechanical safety filters belong in this repo. Examples: do not notify for
+  jobs older than `--max-posted-age-hours`, do not resend already matched job
+  IDs, and keep hook tokens in environment variables.
+
+If a future integration needs dedicated behavior, configure the dedicated
+OpenClaw agent first, then have the watcher send that `agentId`. If the watcher
+sends a `sessionKey`, OpenClaw must either allow request session keys with safe
+prefixes or use its configured default session key.
 
 For a fresh baseline, you can save the current jobs locally (for example
 `data/baseline_us_jobs_current.json`) and mark them as seen so only new jobs
@@ -208,6 +237,8 @@ sudo journalctl -u microsoft-job-watcher -f
 The watcher no longer filters on years of experience. It fetches broad US
 results, then checks the title and job description for configured role
 keywords. This intentionally favors catching more roles over strict precision.
+By default, it suppresses notifications for jobs posted more than 2 hours before
+the scan time.
 
 Delivered matches stay suppressed by the SQLite cache. Jobs that were seen but
 did not match are allowed to be rechecked, so description edits and keyword
@@ -216,4 +247,5 @@ changes can still surface later.
 Incremental scans stop after `--stop-after-seen-pages` consecutive pages contain
 only already-seen US jobs. Every `--full-scan-interval-hours`, the watcher runs
 a full scan of `--max-pages` pages and ignores that shortcut so older/backfilled
-postings can still be found and prior non-matches can be re-evaluated.
+postings can still be evaluated. The posted-age filter still prevents old jobs
+from notifying during those full scans.

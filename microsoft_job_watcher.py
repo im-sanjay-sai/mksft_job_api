@@ -44,6 +44,7 @@ DEFAULT_INTERVAL_MINUTES = 15
 DEFAULT_MAX_PAGES = 200
 DEFAULT_STOP_AFTER_SEEN_PAGES = 3
 DEFAULT_FULL_SCAN_INTERVAL_HOURS = 24.0
+DEFAULT_MAX_POSTED_AGE_HOURS = 2.0
 DEFAULT_DISPLAY_TIMEZONE = "America/Los_Angeles"
 DEFAULT_WEBHOOK_MODE = "generic"
 DEFAULT_OPENCLAW_HOOK_NAME = "Microsoft Jobs"
@@ -55,10 +56,19 @@ PAGE_SIZE = 10
 USER_AGENT = "Mozilla/5.0 (compatible; microsoft-job-watcher/1.0)"
 OPENCLAW_AGENT_INSTRUCTIONS = (
     "You are the independent Microsoft jobs alert agent. Use only the job "
-    "details below to produce one Telegram-ready plain-text alert. Keep it "
-    "concise, avoid commentary about the watcher, and do not include UTC time. "
-    "Use the provided local posted time exactly as the posted time. Include the "
-    "title, job ID, department, location, match reason, and URL."
+    "details below. Send an alert only for clearly technical engineering roles, "
+    "such as Software Engineer, SDE, SWE, software developer, AI engineer, "
+    "applied engineer, applied scientist, machine learning engineer, platform "
+    "engineer, backend engineer, frontend engineer, full-stack engineer, or "
+    "data engineer. Ignore product manager, program manager, project manager, "
+    "business development, sales, marketing, design, support, operations, "
+    "recruiting, and other non-engineering roles even if they mention AI, ML, "
+    "software, or platforms. If the role is not clearly an engineering/developer "
+    "role, reply exactly HEARTBEAT_OK and nothing else. For accepted roles, "
+    "produce one concise Telegram-ready plain-text alert, avoid commentary about "
+    "the watcher, and do not include UTC time. Use the provided local posted "
+    "time exactly as the posted time. Include the title, job ID, department, "
+    "location, match reason, and URL."
 )
 
 
@@ -422,6 +432,20 @@ def record_full_scan(connection: sqlite3.Connection) -> None:
     set_state(connection, "last_full_scan_utc", utc_now())
 
 
+def job_posted_within_age(
+    job: JobSummary,
+    max_age_hours: float,
+    now: dt.datetime | None = None,
+) -> bool:
+    if max_age_hours <= 0:
+        return True
+    if job.posted_ts is None:
+        return False
+    now = now or dt.datetime.now(dt.timezone.utc)
+    posted = dt.datetime.fromtimestamp(job.posted_ts, tz=dt.timezone.utc)
+    return posted >= now - dt.timedelta(hours=max_age_hours)
+
+
 def load_timezone(name: str) -> ZoneInfo:
     try:
         return ZoneInfo(name)
@@ -675,6 +699,7 @@ def run_cycle(
     *,
     full_scan: bool = False,
 ) -> int:
+    scan_started_at = dt.datetime.now(dt.timezone.utc)
     scan_type = "full scan" if full_scan else "incremental scan"
     print(
         f"[{current_time_display(args.display_timezone)}] "
@@ -695,11 +720,21 @@ def run_cycle(
 
     new_count = 0
     match_count = 0
+    skipped_by_age_count = 0
     for job in candidates:
         seen_status = (
             None if args.no_cache else seen_match_status(connection, job.job_id)
         )
         if seen_status is True:
+            continue
+
+        if not job_posted_within_age(
+            job,
+            args.max_posted_age_hours,
+            now=scan_started_at,
+        ):
+            mark_seen(connection, job, matched=False)
+            skipped_by_age_count += 1
             continue
 
         new_count += 1
@@ -759,7 +794,8 @@ def run_cycle(
 
     print(
         f"[{current_time_display(args.display_timezone)}] "
-        f"Done. Candidates={len(candidates)} checked={new_count} matches={match_count}",
+        f"Done. Candidates={len(candidates)} checked={new_count} "
+        f"matches={match_count} skipped_by_age={skipped_by_age_count}",
         flush=True,
     )
     return match_count
@@ -858,6 +894,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Run a full scan this often by disabling --stop-after-seen-pages. "
             "Default: 24. Use 0 to disable periodic full scans."
+        ),
+    )
+    parser.add_argument(
+        "--max-posted-age-hours",
+        type=float,
+        default=DEFAULT_MAX_POSTED_AGE_HOURS,
+        help=(
+            "Only alert on jobs posted within this many hours. "
+            "Default: 2. Use 0 to disable this age filter."
         ),
     )
     parser.add_argument(
@@ -993,6 +1038,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--stop-after-seen-pages cannot be negative")
     if args.full_scan_interval_hours < 0:
         raise ValueError("--full-scan-interval-hours cannot be negative")
+    if args.max_posted_age_hours < 0:
+        raise ValueError("--max-posted-age-hours cannot be negative")
     if not args.all_jobs and not parse_keywords(args.keyword):
         raise ValueError("--keyword cannot be empty")
     load_timezone(args.display_timezone)

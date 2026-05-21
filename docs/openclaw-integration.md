@@ -6,7 +6,8 @@ not use an OpenClaw Python SDK.
 ## Flow
 
 1. `microsoft_job_watcher.py` polls Microsoft Careers for broad United States
-   job postings and filters locally on software/AI role keywords.
+   job postings and filters locally on posted age plus software/AI role
+   keywords.
 2. For each new match, the watcher builds a webhook payload.
 3. In default `generic` mode, the watcher sends its native JSON payload.
 4. In `openclaw-agent` mode, the watcher sends an OpenClaw `/hooks/agent`
@@ -20,8 +21,9 @@ not use an OpenClaw Python SDK.
 
 - `message`: prompt containing instructions for the independent OpenClaw agent,
   job title, job ID, department, location, posted time in Pacific/local
-  timezone, match reason, and URL. The prompt explicitly tells the agent not to
-  include UTC time.
+  timezone, match reason, and URL. The prompt tells the agent to alert only on
+  clearly technical engineering/developer roles, skip product/program/project
+  manager and other non-engineering roles with `HEARTBEAT_OK`, and omit UTC time.
 - `name`: hook display name. Default: `Microsoft Jobs`.
 - `agentId`: dedicated OpenClaw agent ID. Default: `microsoft-jobs`.
 - `sessionKey`: OpenClaw session key. Default: `hook:microsoft-jobs`, or
@@ -40,9 +42,17 @@ The independent agent instruction sent in `message` is:
 
 ```text
 You are the independent Microsoft jobs alert agent. Use only the job details
-below to produce one Telegram-ready plain-text alert. Keep it concise, avoid
-commentary about the watcher, and do not include UTC time. Use the provided
-local posted time exactly as the posted time. Include the title, job ID,
+below. Send an alert only for clearly technical engineering roles, such as
+Software Engineer, SDE, SWE, software developer, AI engineer, applied engineer,
+applied scientist, machine learning engineer, platform engineer, backend
+engineer, frontend engineer, full-stack engineer, or data engineer. Ignore
+product manager, program manager, project manager, business development, sales,
+marketing, design, support, operations, recruiting, and other non-engineering
+roles even if they mention AI, ML, software, or platforms. If the role is not
+clearly an engineering/developer role, reply exactly HEARTBEAT_OK and nothing
+else. For accepted roles, produce one concise Telegram-ready plain-text alert,
+avoid commentary about the watcher, and do not include UTC time. Use the
+provided local posted time exactly as the posted time. Include the title, job ID,
 department, location, match reason, and URL.
 ```
 
@@ -56,6 +66,7 @@ python3 microsoft_job_watcher.py \
   --max-pages 200 \
   --stop-after-seen-pages 3 \
   --full-scan-interval-hours 24 \
+  --max-posted-age-hours 2 \
   --display-timezone America/Los_Angeles \
   --webhook-url http://127.0.0.1:18789/hooks/agent \
   --webhook-mode openclaw-agent \
