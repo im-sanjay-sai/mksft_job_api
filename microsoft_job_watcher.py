@@ -65,10 +65,11 @@ OPENCLAW_AGENT_INSTRUCTIONS = (
     "recruiting, and other non-engineering roles even if they mention AI, ML, "
     "software, or platforms. If the role is not clearly an engineering/developer "
     "role, reply exactly HEARTBEAT_OK and nothing else. For accepted roles, "
-    "produce one concise Telegram-ready plain-text alert, avoid commentary about "
-    "the watcher, and do not include UTC time. Use the provided local posted "
-    "time exactly as the posted time. Include the title, job ID, department, "
-    "location, match reason, and URL."
+    "produce one concise Telegram-ready plain-text alert. Start the alert with "
+    "the posted time in 12-hour format followed by the date, do not include any "
+    "job ID, avoid commentary about the watcher, and do not include UTC time. "
+    "Use the provided posted time exactly as the posted time. Include only the "
+    "title, department, location, match reason, and URL."
 )
 
 
@@ -477,7 +478,8 @@ def posted_time_display(job: JobSummary, timezone_name: str) -> str:
     posted = posted_datetime(job, timezone_name=timezone_name)
     if not posted:
         return "unknown"
-    return posted.strftime("%Y-%m-%d %H:%M:%S %Z %z")
+    time_part = posted.strftime("%I:%M %p %Z").lstrip("0")
+    return f"{time_part}, {posted.strftime('%B')} {posted.day}, {posted.year}"
 
 
 def current_time_display(timezone_name: str) -> str:
@@ -545,11 +547,10 @@ def openclaw_agent_message(
 
     return (
         f"{OPENCLAW_AGENT_INSTRUCTIONS}\n\n"
+        f"Posted: {posted_time_display(job, display_timezone)}\n"
         f"Title: {detail.title or job.title}\n"
-        f"Job ID: {job.display_job_id or job.job_id}\n"
         f"Department: {job.department or 'unknown'}\n"
         f"Locations: {locations}\n"
-        f"Posted {display_timezone}: {posted_time_display(job, display_timezone)}\n"
         f"Why it matched: {why_matched}\n"
         f"URL: {detail.url or job.url}"
     )

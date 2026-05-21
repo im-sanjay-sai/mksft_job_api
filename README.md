@@ -179,7 +179,8 @@ asks the agent to deliver a concise job alert into the configured chat channel.
 The hook message tells the independent OpenClaw agent to use only the provided
 job details, alert only on clearly technical engineering/developer roles, skip
 product/program/project manager and other non-engineering roles with
-`HEARTBEAT_OK`, use the local posted time, and omit UTC time.
+`HEARTBEAT_OK`, start accepted alerts with a 12-hour posted time followed by the
+date, omit job IDs, and omit UTC time.
 This is the safer option for services because the hook token stays in the
 environment instead of showing up in process arguments.
 

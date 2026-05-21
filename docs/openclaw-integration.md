@@ -20,10 +20,11 @@ not use an OpenClaw Python SDK.
 `openclaw-agent` mode sends these OpenClaw fields:
 
 - `message`: prompt containing instructions for the independent OpenClaw agent,
-  job title, job ID, department, location, posted time in Pacific/local
+  job title, department, location, posted time in Pacific/local
   timezone, match reason, and URL. The prompt tells the agent to alert only on
   clearly technical engineering/developer roles, skip product/program/project
-  manager and other non-engineering roles with `HEARTBEAT_OK`, and omit UTC time.
+  manager and other non-engineering roles with `HEARTBEAT_OK`, omit job IDs, and
+  use a 12-hour time-first posted-time format.
 - `name`: hook display name. Default: `Microsoft Jobs`.
 - `agentId`: dedicated OpenClaw agent ID. Default: `microsoft-jobs`.
 - `sessionKey`: OpenClaw session key. Default: `hook:microsoft-jobs`, or
@@ -50,10 +51,11 @@ product manager, program manager, project manager, business development, sales,
 marketing, design, support, operations, recruiting, and other non-engineering
 roles even if they mention AI, ML, software, or platforms. If the role is not
 clearly an engineering/developer role, reply exactly HEARTBEAT_OK and nothing
-else. For accepted roles, produce one concise Telegram-ready plain-text alert,
-avoid commentary about the watcher, and do not include UTC time. Use the
-provided local posted time exactly as the posted time. Include the title, job ID,
-department, location, match reason, and URL.
+else. For accepted roles, produce one concise Telegram-ready plain-text alert.
+Start the alert with the posted time in 12-hour format followed by the date, do
+not include any job ID, avoid commentary about the watcher, and do not include
+UTC time. Use the provided posted time exactly as the posted time. Include only
+the title, department, location, match reason, and URL.
 ```
 
 ## Runtime Command
