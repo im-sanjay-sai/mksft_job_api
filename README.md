@@ -1,10 +1,24 @@
 # Microsoft Job Watcher
 
 Small Python watcher for Microsoft Careers. It polls every 15 minutes by
-default, looks only at United States postings, and reports new jobs where:
+default, fetches broad United States postings, and reports new jobs where one
+of the configured software/AI role keywords appears in the title or job
+description.
 
-- `software engineer` appears in the title or job description
-- the parsed experience requirement has a minimum value less than or equal to 4 years
+Default role keywords:
+
+- `software engineer`
+- `software engineering`
+- `software developer`
+- `software development`
+- `ai engineer`
+- `ai engineering`
+- `artificial intelligence`
+- `machine learning`
+- `deep learning`
+- `ml engineer`
+- `coreai`
+- `swe`
 
 The script uses the public Microsoft Careers search endpoint and each job's
 public detail page. It stores seen job IDs in SQLite so repeat runs do not report
@@ -40,9 +54,10 @@ By default it polls every 15 minutes.
 python3 microsoft_job_watcher.py --once --max-pages 20
 python3 microsoft_job_watcher.py --interval-minutes 5
 python3 microsoft_job_watcher.py --all-jobs --once
-python3 microsoft_job_watcher.py --include-unknown-years
+python3 microsoft_job_watcher.py --keyword "software engineer" --keyword "ai engineer"
+python3 microsoft_job_watcher.py --full-scan-interval-hours 12
 python3 microsoft_job_watcher.py --webhook-url http://127.0.0.1:8787/matches --no-print-matches
-python3 microsoft_job_watcher.py --all-jobs --include-unknown-years --max-pages 200 --stop-after-seen-pages 3 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
+python3 microsoft_job_watcher.py --max-pages 200 --stop-after-seen-pages 3 --full-scan-interval-hours 24 --display-timezone America/Los_Angeles --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-agent-id microsoft-jobs --openclaw-session-key hook:microsoft-jobs --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
 python3 microsoft_job_watcher.py --reset-cache --once
 ```
 
@@ -50,15 +65,19 @@ Options:
 
 - `--interval-minutes`: poll interval. Default: `15`.
 - `--max-pages`: number of Microsoft search pages to read. Microsoft returns
-  10 jobs per page. Default: `10`.
-- `--stop-after-seen-pages`: in `--all-jobs` mode, stop after this many
-  consecutive pages contain only already-seen jobs. Default: `3`. Use `0` to
-  disable this optimization.
-- `--max-years`: max acceptable years of experience. Default: `4`.
-- `--keyword`: keyword or phrase to match in title/description. Default:
-  `software engineer`.
+  10 jobs per page. Default: `200`.
+- `--stop-after-seen-pages`: stop after this many consecutive pages contain
+  only already-seen jobs. Default: `3`. Use `0` to disable this optimization.
+- `--full-scan-interval-hours`: periodically run a full scan by disabling
+  `--stop-after-seen-pages`. Default: `24`. Use `0` to disable full scans.
+- `--search-query`: optional Microsoft Careers API query. Default is empty,
+  so the watcher fetches broad US results and filters locally.
+- `--keyword`: role keyword or phrase to match in title/description. Repeatable
+  and comma-separated values are accepted. Defaults are listed above.
 - `--all-jobs`: match all United States jobs returned by Microsoft Careers.
-  This disables keyword and years filtering.
+  This disables local role keyword filtering.
+- `--display-timezone`: timezone used in printed alerts and webhook local
+  timestamps. Default: `America/Los_Angeles` for Pacific time.
 - `--webhook-url`: POST each new match to this HTTP(S) endpoint as JSON.
 - `--webhook-mode`: `generic` or `openclaw-agent`. Default: `generic`.
 - `--webhook-timeout`: webhook timeout in seconds. Default: `15`.
@@ -68,6 +87,12 @@ Options:
   token to inject as the `Authorization` header at runtime.
 - `--openclaw-name`: name shown in OpenClaw `/hooks/agent` runs. Default:
   `Microsoft Jobs`.
+- `--openclaw-agent-id`: dedicated OpenClaw `agentId` for `/hooks/agent`
+  payloads. Default: `microsoft-jobs`.
+- `--openclaw-session-key`: OpenClaw `sessionKey` for `/hooks/agent` payloads.
+  Default: `hook:microsoft-jobs`.
+- `--openclaw-session-per-job`: use `hook:microsoft-job:<job_id>` as the
+  `sessionKey` so each job gets an isolated session.
 - `--openclaw-channel`: delivery channel for `openclaw-agent` mode, for example
   `telegram`.
 - `--openclaw-to`: delivery recipient for `openclaw-agent` mode, for example a
@@ -78,9 +103,10 @@ Options:
   `/hooks/agent`. Default: `120`.
 - `--no-print-matches`: suppress full match details on stdout. Useful when a
   webhook handles alerts.
-- `--include-unknown-years`: report jobs even when the script cannot find an
-  experience requirement. Default is conservative and excludes unknown years.
 - `--reset-cache`: delete the seen-job cache before running.
+- `--max-years` and `--include-unknown-years`: deprecated compatibility
+  options. They are accepted but ignored because experience filtering has been
+  removed.
 
 ## Webhook payload
 
@@ -89,7 +115,8 @@ When `--webhook-url` is set, each new match is POSTed as JSON:
 ```json
 {
   "event": "microsoft_job_match",
-  "sent_at_utc": "2026-05-20T18:00:00+00:00",
+  "sent_at_local": "2026-05-20T11:00:00-07:00",
+  "sent_timezone": "America/Los_Angeles",
   "source": "microsoft-job-watcher",
   "job": {
     "id": "abc123",
@@ -98,14 +125,14 @@ When `--webhook-url` is set, each new match is POSTed as JSON:
     "department": "Engineering",
     "locations": ["United States"],
     "standardized_locations": ["Redmond, WA, US"],
-    "posted_utc": "2026-05-20T17:00:00+00:00",
+    "posted_local": "2026-05-20T10:00:00-07:00",
+    "posted_timezone": "America/Los_Angeles",
     "url": "https://apply.careers.microsoft.com/us/en/job/abc123/software-engineer"
   },
   "match": {
+    "matching_mode": "role-keywords",
     "keyword_found_in": "title+description",
-    "years": [2],
-    "year_snippets": ["2+ years software engineering experience."],
-    "accepted_max_years": 4
+    "matched_keywords": ["software engineer", "software engineering"]
   }
 }
 ```
@@ -127,13 +154,15 @@ Example:
 ```bash
 python3 microsoft_job_watcher.py \
   --interval-minutes 15 \
-  --all-jobs \
-  --include-unknown-years \
   --max-pages 200 \
   --stop-after-seen-pages 3 \
+  --full-scan-interval-hours 24 \
+  --display-timezone America/Los_Angeles \
   --webhook-url http://127.0.0.1:18789/hooks/agent \
   --webhook-mode openclaw-agent \
   --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN \
+  --openclaw-agent-id microsoft-jobs \
+  --openclaw-session-key hook:microsoft-jobs \
   --openclaw-channel telegram \
   --openclaw-to YOUR_TELEGRAM_USER_ID \
   --no-print-matches
@@ -141,6 +170,9 @@ python3 microsoft_job_watcher.py \
 
 In `openclaw-agent` mode, the watcher sends an OpenClaw-compatible payload that
 asks the agent to deliver a concise job alert into the configured chat channel.
+The hook message tells the independent OpenClaw agent to use only the provided
+job details, produce one Telegram-ready plain-text alert, use the local posted
+time, and omit UTC time.
 This is the safer option for services because the hook token stays in the
 environment instead of showing up in process arguments.
 
@@ -171,16 +203,17 @@ sudo systemctl enable --now microsoft-job-watcher
 sudo journalctl -u microsoft-job-watcher -f
 ```
 
-## Notes on the years filter
+## Notes on filtering
 
-Microsoft descriptions are prose, not a strict structured field. The script
-extracts phrases like `2+ years software industry experience` and accepts the
-job when the minimum parsed years value is less than or equal to `--max-years`.
-This catches common Microsoft phrasing such as:
+The watcher no longer filters on years of experience. It fetches broad US
+results, then checks the title and job description for configured role
+keywords. This intentionally favors catching more roles over strict precision.
 
-- Master's degree and 1+ years
-- Bachelor's degree and 2+ years
-- 2+ years programming experience
+Delivered matches stay suppressed by the SQLite cache. Jobs that were seen but
+did not match are allowed to be rechecked, so description edits and keyword
+changes can still surface later.
 
-If a posting has no parseable years requirement, it is skipped unless
-`--include-unknown-years` is set.
+Incremental scans stop after `--stop-after-seen-pages` consecutive pages contain
+only already-seen US jobs. Every `--full-scan-interval-hours`, the watcher runs
+a full scan of `--max-pages` pages and ignores that shortcut so older/backfilled
+postings can still be found and prior non-matches can be re-evaluated.

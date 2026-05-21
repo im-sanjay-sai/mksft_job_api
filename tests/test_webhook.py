@@ -34,8 +34,7 @@ def sample_match() -> MatchResult:
             date_posted="2026-05-20",
             url="https://apply.careers.microsoft.com/us/en/job/abc123/software-engineer",
         ),
-        years=(2,),
-        year_snippets=("2+ years software engineering experience.",),
+        matched_keywords=("software engineer", "software engineering"),
         keyword_found_in="title+description",
     )
 
@@ -55,21 +54,32 @@ class FakeResponse:
 
 class WebhookTest(unittest.TestCase):
     def test_builds_structured_payload(self) -> None:
-        payload = webhook_payload(sample_match(), max_years=4)
+        payload = webhook_payload(sample_match())
 
         self.assertEqual(payload["event"], "microsoft_job_match")
+        self.assertNotIn("sent_at_utc", payload)
+        self.assertIn("sent_at_local", payload)
+        self.assertEqual(payload["sent_timezone"], "America/Los_Angeles")
         self.assertEqual(payload["source"], "microsoft-job-watcher")
         self.assertEqual(payload["job"]["id"], "abc123")
         self.assertEqual(payload["job"]["title"], "Software Engineer II")
-        self.assertEqual(payload["match"]["matching_mode"], "keyword+years")
-        self.assertEqual(payload["match"]["years"], [2])
-        self.assertEqual(payload["match"]["accepted_max_years"], 4)
+        self.assertNotIn("posted_utc", payload["job"])
+        self.assertEqual(payload["job"]["posted_local"], "2023-11-14T14:13:20-08:00")
+        self.assertEqual(payload["job"]["posted_timezone"], "America/Los_Angeles")
+        self.assertEqual(payload["match"]["matching_mode"], "role-keywords")
+        self.assertEqual(
+            payload["match"]["matched_keywords"],
+            ["software engineer", "software engineering"],
+        )
 
     def test_builds_all_jobs_payload(self) -> None:
-        payload = webhook_payload(sample_match(), max_years=4, all_jobs=True)
+        payload = webhook_payload(sample_match(), all_jobs=True)
 
         self.assertEqual(payload["match"]["matching_mode"], "all-jobs")
-        self.assertIsNone(payload["match"]["accepted_max_years"])
+        self.assertEqual(
+            payload["match"]["matched_keywords"],
+            ["software engineer", "software engineering"],
+        )
 
     def test_parses_repeatable_headers(self) -> None:
         headers = parse_webhook_headers(
@@ -122,18 +132,23 @@ class WebhookTest(unittest.TestCase):
     def test_builds_openclaw_agent_payload(self) -> None:
         payload = openclaw_agent_payload(
             sample_match(),
-            max_years=4,
             args=SimpleNamespace(
                 all_jobs=False,
                 openclaw_name="Microsoft Jobs",
+                openclaw_agent_id="microsoft-jobs",
+                openclaw_session_key="hook:microsoft-jobs",
+                openclaw_session_per_job=False,
                 openclaw_wake_mode="now",
                 openclaw_timeout_seconds=120,
                 openclaw_channel="telegram",
                 openclaw_to="1234567890",
+                display_timezone="America/Los_Angeles",
             ),
         )
 
         self.assertEqual(payload["name"], "Microsoft Jobs")
+        self.assertEqual(payload["agentId"], "microsoft-jobs")
+        self.assertEqual(payload["sessionKey"], "hook:microsoft-jobs")
         self.assertEqual(payload["wakeMode"], "now")
         self.assertTrue(payload["deliver"])
         self.assertEqual(payload["timeoutSeconds"], 120)
@@ -141,22 +156,47 @@ class WebhookTest(unittest.TestCase):
         self.assertEqual(payload["to"], "1234567890")
         self.assertIn("Software Engineer II", payload["message"])
         self.assertIn("Why it matched", payload["message"])
+        self.assertIn("Posted America/Los_Angeles", payload["message"])
+        self.assertNotIn("Posted UTC", payload["message"])
+        self.assertIn("independent Microsoft jobs alert agent", payload["message"])
 
     def test_builds_openclaw_agent_payload_for_all_jobs(self) -> None:
         payload = openclaw_agent_payload(
             sample_match(),
-            max_years=4,
             args=SimpleNamespace(
                 all_jobs=True,
                 openclaw_name="Microsoft Jobs",
+                openclaw_agent_id="microsoft-jobs",
+                openclaw_session_key="hook:microsoft-jobs",
+                openclaw_session_per_job=False,
                 openclaw_wake_mode="now",
                 openclaw_timeout_seconds=120,
                 openclaw_channel="telegram",
                 openclaw_to="1234567890",
+                display_timezone="America/Los_Angeles",
             ),
         )
 
         self.assertIn("all-jobs mode", payload["message"])
+
+    def test_builds_openclaw_per_job_session_key(self) -> None:
+        payload = openclaw_agent_payload(
+            sample_match(),
+            args=SimpleNamespace(
+                all_jobs=False,
+                openclaw_name="Microsoft Jobs",
+                openclaw_agent_id="microsoft-jobs",
+                openclaw_session_key="hook:microsoft-jobs",
+                openclaw_session_per_job=True,
+                openclaw_wake_mode="now",
+                openclaw_timeout_seconds=120,
+                openclaw_channel="telegram",
+                openclaw_to="1234567890",
+                display_timezone="America/Los_Angeles",
+            ),
+        )
+
+        self.assertEqual(payload["sessionKey"], "hook:microsoft-job:abc123")
 
     def test_fetch_candidates_stops_after_seen_pages_in_all_jobs_mode(self) -> None:
         pages = {

@@ -9,7 +9,7 @@ User=YOUR_LINUX_USER
 Group=YOUR_LINUX_USER
 WorkingDirectory=/opt/microsoft-job-watcher
 EnvironmentFile=/opt/microsoft-job-watcher/microsoft-job-watcher.env
-ExecStart=/usr/bin/python3 /opt/microsoft-job-watcher/microsoft_job_watcher.py --interval-minutes 15 --all-jobs --include-unknown-years --max-pages 200 --stop-after-seen-pages 3 --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
+ExecStart=/usr/bin/python3 /opt/microsoft-job-watcher/microsoft_job_watcher.py --interval-minutes 15 --max-pages 200 --stop-after-seen-pages 3 --full-scan-interval-hours 24 --display-timezone America/Los_Angeles --webhook-url http://127.0.0.1:18789/hooks/agent --webhook-mode openclaw-agent --webhook-bearer-token-env OPENCLAW_HOOKS_TOKEN --openclaw-agent-id microsoft-jobs --openclaw-session-key hook:microsoft-jobs --openclaw-channel telegram --openclaw-to YOUR_TELEGRAM_USER_ID --no-print-matches
 Restart=always
 RestartSec=30
 
